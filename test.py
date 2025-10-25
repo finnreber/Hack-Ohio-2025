@@ -1,26 +1,39 @@
-# test_parser.py
-from utils.parse_aux import parse_aux
-import pandas as pd
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
-# Path to your uploaded file
-file_path = "data/Hawaii40_20231026.AUX"
 
-# Parse the AUX
-buses, lines = parse_aux(file_path)
+from src.data_loader import load_data
+from src.compute_stress import compute_stress
+from src.stress_model import compute_line_stress
 
-# Basic verification
-print("\n=== BUSES ===")
-print(buses.head())
-print(f"Total buses: {len(buses)}")
+# Load your data
+lines, flows, buses, g_lines, g_buses = load_data()
 
-print("\n=== LINES ===")
-print(lines.head())
-print(f"Total lines: {len(lines)}")
+# Merge nominal flows
+lines_merged = lines.merge(flows, on="name", how="left")
 
-# Optional: check if IDs link correctly
-bad_refs = lines[~lines["from"].isin(buses["id"]) | ~lines["to"].isin(buses["id"])]
-if len(bad_refs):
-    print("\n⚠️ Lines referencing unknown buses:")
-    print(bad_refs)
-else:
-    print("\n✅ All lines reference valid buses.")
+# Environment for IEEE-738 model
+env_params = {
+    "Ta": 30,
+    "WindVelocity": 2.0,
+    "WindAngleDeg": 90,
+    "SunTime": 12,
+    "Elevation": 1000,
+    "Latitude": 21,
+    "Emissivity": 0.8,
+    "Absorptivity": 0.8,
+    "Direction": "EastWest",
+    "Atmosphere": "Clear",
+    "Date": "12 Jun",
+}
+
+# Simplified model
+simple = compute_stress(lines_merged, temp=35, wind=1.0)
+print("=== Simplified model ===")
+print(simple.head())
+
+# IEEE-738 physical model
+accurate = compute_line_stress(lines_merged, env_params)
+print("\n=== IEEE-738 model ===")
+print(accurate.head())
