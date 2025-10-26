@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
 
+# Path Setup
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
@@ -18,7 +19,10 @@ try:
 except Exception:
     sm = None
 
+# Page config
 st.set_page_config(page_title="Hawaii Grid", layout="wide", initial_sidebar_state="expanded")
+
+# CSS
 st.markdown("""
 <style>
 :root{ --bg:#0f1321; --panel:#131a2e; --muted:#0d1426; --text:#eef1ff; --sub:#a6b0d6; --accent:#7c5cff; --shadow:0 16px 40px rgba(0,0,0,.35); --radius:22px; }
@@ -35,6 +39,7 @@ h1,h2,h3,h4,h5,h6{ color:var(--text)!important; } .small{ color:var(--sub); font
 import requests
 import json
 
+# Weather API
 def get_hawaii_weather():
     """Fetch current weather in Honolulu, Hawaii using National Weather Service API"""
     try:
@@ -76,7 +81,7 @@ def get_hawaii_weather():
         st.error(f"Failed to fetch weather data: {str(e)}")
         return None, None
 
-# ── Sidebar controls ──────────────────────────────────────────────────────────
+# Sidebar controls
 st.sidebar.header("Adjust Parameters")
 
 # Weather import button with custom styling
