@@ -3,355 +3,185 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
+import requests
 
-# Path Setup
+# ─────────── Path setup ───────────
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 try:
-    import compute_stress as cs   
+    import compute_stress as cs
 except Exception:
     cs = None
-try:
-    import stress_model as sm     
-except Exception:
-    sm = None
 
-# Page config
-st.set_page_config(page_title="Hawaii Grid", layout="wide", initial_sidebar_state="expanded")
-
-# CSS
+# ─────────── Page setup ───────────
+st.set_page_config(page_title="Hawaii Grid", layout="wide")
 st.markdown("""
 <style>
-:root{ --bg:#0f1321; --panel:#131a2e; --muted:#0d1426; --text:#eef1ff; --sub:#a6b0d6; --accent:#7c5cff; --shadow:0 16px 40px rgba(0,0,0,.35); --radius:22px; }
-#MainMenu, header[data-testid="stHeader"], footer, [data-testid="stToolbar"] { display:none!important; }
-.stApp, .main, .block-container { background: radial-gradient(1200px 600px at 15% 10%, #151b31 0%, var(--bg) 40%, #0b1020 100%)!important; }
-section[data-testid="stSidebar"]{ min-width:320px!important; max-width:320px!important; background:var(--panel)!important; color:var(--text)!important; box-shadow:var(--shadow); }
-section[data-testid="stSidebar"] *{ color:var(--text)!important; }
-[data-baseweb="slider"] div [role="slider"]{ box-shadow:0 0 0 6px rgba(124,92,255,.15)!important; background:var(--accent)!important; border:3px solid rgba(255,255,255,.15)!important; }
-.card{ background:linear-gradient(180deg, var(--panel), var(--muted)); border-radius:22px; padding:22px 24px; box-shadow:var(--shadow); border:1px solid rgba(255,255,255,.04); }
-h1,h2,h3,h4,h5,h6{ color:var(--text)!important; } .small{ color:var(--sub); font-size:.9rem; }
+:root {
+  --bg:#0f1321; --panel:#131a2e; --muted:#0d1426;
+  --text:#eef1ff; --sub:#a6b0d6; --accent:#7c5cff;
+  --shadow:0 16px 40px rgba(0,0,0,.35); --radius:22px;
+}
+#MainMenu, footer, [data-testid="stToolbar"] {display:none!important;}
+.stApp {
+  background: radial-gradient(1200px 600px at 15% 10%, #151b31 0%, var(--bg) 40%, #0b1020 100%)!important;
+}
+.card {
+  background:linear-gradient(180deg, var(--panel), var(--muted));
+  border-radius:22px; padding:22px 24px; box-shadow:var(--shadow);
+  border:1px solid rgba(255,255,255,.04); margin-bottom:20px;
+}
+h1,h2,h3,h4,h5,h6{color:var(--text)!important;}
+.small{color:var(--sub); font-size:.9rem;}
 </style>
 """, unsafe_allow_html=True)
 
-import requests
-import json
-
-# Weather API
+# ─────────── Weather fetcher ───────────
 def get_hawaii_weather():
-    """Fetch current weather in Honolulu, Hawaii using National Weather Service API"""
     try:
         headers = {'User-Agent': 'HawaiiGridApp/1.0'}
         point_url = "https://api.weather.gov/points/21.3069,-157.8583"
-        response = requests.get(point_url, headers=headers)
-        point_data = response.json()
-        
-        if response.status_code != 200:
-            st.error("Could not find weather station data")
-            return None, None
-            
-        forecast_url = point_data['properties']['forecastHourly']
-        response = requests.get(forecast_url, headers=headers)
-        weather_data = response.json()
-        
-        if response.status_code == 200:
-            current = weather_data['properties']['periods'][0]
-            
-            # Convert temperature from F to C
-            temp_f = current['temperature']
-            temp_c = (temp_f - 32) * 5/9
-            
-            # Convert wind speed from mph to m/s and then to percentage
-            # First extract the numeric wind speed from the string (e.g., "10 mph" -> 10)
-            wind_mph = float(''.join(filter(str.isdigit, current['windSpeed'])))
-            wind_ms = wind_mph * 0.44704  # Convert mph to m/s
-            wind_pct = min(100.0, (wind_ms / 15.0) * 100.0)
-            
-            st.sidebar.info(f"Current conditions in Honolulu:\n" + 
-                          f"Temperature: {temp_c:.1f}°C ({temp_f}°F)\n" +
-                          f"Wind: {wind_ms:.1f} m/s ({wind_mph} mph)")
-            
-            return temp_c, wind_pct
-        else:
-            st.error("Could not fetch weather data")
-            return None, None
+        resp = requests.get(point_url, headers=headers)
+        data = resp.json()
+        forecast_url = data['properties']['forecastHourly']
+        resp = requests.get(forecast_url, headers=headers)
+        weather = resp.json()['properties']['periods'][0]
+
+        temp_f = weather['temperature']
+        temp_c = (temp_f - 32) * 5 / 9
+        wind_mph = float(''.join(filter(str.isdigit, weather['windSpeed'])))
+        wind_ms = wind_mph * 0.44704
+        wind_pct = min(100.0, (wind_ms / 15.0) * 100.0)
+        return temp_c, wind_pct
     except Exception as e:
-        st.error(f"Failed to fetch weather data: {str(e)}")
+        st.error(f"Weather fetch failed: {e}")
         return None, None
 
-# Sidebar controls
-st.sidebar.header("Adjust Parameters")
-
-# Weather import button with custom styling
-st.sidebar.markdown("""
-    
-""", unsafe_allow_html=True)
-
-# Initialize session state if needed
-if 'temp' not in st.session_state:
-    st.session_state['temp'] = 27.0
-if 'wind' not in st.session_state:
-    st.session_state['wind'] = 50.0
-
-# Define callback functions for slider updates
-def on_temp_change():
-    st.session_state['temp'] = st.session_state.temp_slider
-
-def on_wind_change():
-    st.session_state['wind'] = st.session_state.wind_slider
-
-# Weather import button with loading state
-# Make a big empty space for visual separation
-st.sidebar.markdown("### ")
-
-# Create a large, eye-catching button
-if st.sidebar.button("🌤️ IMPORT CURRENT\nHAWAII WEATHER", use_container_width=True):
-    with st.sidebar.status("Fetching weather data...", expanded=True) as status:
-        current_temp, current_wind = get_hawaii_weather()
-        if current_temp is not None and current_wind is not None:
-            # Update session state
-            st.session_state['temp'] = current_temp
-            st.session_state['wind'] = current_wind
-            # Force slider values to update
-            st.session_state.temp_slider = current_temp
-            st.session_state.wind_slider = current_wind
-            status.update(label="Weather data imported!", state="complete", expanded=False)
-            # Force rerun to update UI
-            st.rerun()
-
-# Sliders with keys for state management
-wind = st.sidebar.slider("Wind Intensity (scaled %)", 0.0, 100.0, 
-                        st.session_state['wind'], 
-                        key='wind_slider',
-                        on_change=on_wind_change)
-temp = st.sidebar.slider("Temperature (°C)", 10.0, 75.0, 
-                        st.session_state['temp'],
-                        key='temp_slider',
-                        on_change=on_temp_change)
-
-st.markdown(
-    f"""
-    <div class="card" style="margin-bottom:18px; display:flex; align-items:center; justify-content:space-between;">
-      <div>
-        <h1 style="margin:0; letter-spacing:.3px;">Hawaii Grid</h1>
-        <div class="small">Team 68 • Synthetic 37-bus network</div>
-      </div>
-      <div style="display:flex; gap:10px;">
-        <div class="small" style="padding:10px 14px; border-radius:12px; background:#1a2140; border:1px solid rgba(255,255,255,.06);">
-          Wind&nbsp;<b style="color:#fff">{wind:.0f}%</b>
-        </div>
-        <div class="small" style="padding:10px 14px; border-radius:12px; background:#1a2140; border:1px solid rgba(255,255,255,.06);">
-          Temp&nbsp;<b style="color:#fff">{temp:.0f}°C</b>
-        </div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
+# ─────────── Load data helpers ───────────
 def csv_try(paths):
     for p in paths:
         if os.path.exists(p):
             return pd.read_csv(p)
     raise FileNotFoundError(paths)
 
-
-def lines_from_buses_knn(buses_df: pd.DataFrame, k: int = 2) -> pd.DataFrame:
-    B = buses_df.copy()
-    B["name"] = B["name"].astype(str)
-    coords = B[["x","y"]].to_numpy(dtype=float)
-    ids = B["name"].tolist()
-
-    dists = np.sqrt(((coords[:,None,:] - coords[None,:,:])**2).sum(axis=2))
-    np.fill_diagonal(dists, np.inf)
-
-    edges = set()
-    for i, src in enumerate(ids):
-        nbr_idx = np.argsort(dists[i])[:k]
-        for j in nbr_idx:
-            a, b = sorted((src, ids[j]), key=str)
-            if a != b: edges.add((a,b))
-
-    lines = pd.DataFrame(sorted(edges), columns=["bus_a","bus_b"])
-    lines.insert(0, "name", [f"L{i}" for i in range(len(lines))])
-    return lines
-
-def load_lines(buses_df: pd.DataFrame) -> pd.DataFrame:
-    """Use real endpoints if available; else synthesize from buses via kNN.
-       Also left-join optional p0_nominal from line_flows_nominal.csv."""
-   
-    for p in ["data/lines.csv", "data/csv/lines.csv"]:
-        if os.path.exists(p):
-            df = pd.read_csv(p).copy()
-            colmap = {}
-            if "from" in df.columns and "bus_a" not in df.columns: colmap["from"] = "bus_a"
-            if "to"   in df.columns and "bus_b" not in df.columns: colmap["to"]   = "bus_b"
-            if "bus0" in df.columns and "bus_a" not in df.columns: colmap["bus0"] = "bus_a"
-            if "bus1" in df.columns and "bus_b" not in df.columns: colmap["bus1"] = "bus_b"
-            if colmap: df = df.rename(columns=colmap)
-            if "name" not in df.columns:
-                df.insert(0, "name", [f"L{i}" for i in range(len(df))])
-            for c in ["name","bus_a","bus_b"]:
-                df[c] = df[c].astype(str)
-        
-            needed_cols = ["name", "bus_a", "bus_b"]
-            for col in ["rating", "s_nom"]:
-                if col in df.columns:
-                    needed_cols.append(col)
-            lines = df[needed_cols].copy()
-            break
-    else:
-        
-        lines = lines_from_buses_knn(buses_df, k=2)
-        if "rating" not in lines.columns and "s_nom" not in lines.columns:
-            lines["rating"] = 200.0 
-
-    for p in ["data/line_flows_nominal.csv", "data/csv/line_flows_nominal.csv"]:
-        if os.path.exists(p):
-            flows = pd.read_csv(p).copy()
-            if {"name","p0_nominal"} <= set(flows.columns):
-                flows["name"] = flows["name"].astype(str)
-                lines = lines.merge(flows[["name","p0_nominal"]], on="name", how="left")
-            break
-
-    return lines
-
-def compute_edge_states(df_lines: pd.DataFrame, temp_c: float, wind_pct: float) -> pd.DataFrame:
-    """Call your backend. Expect columns: name, stress(0..100), color."""
-    out = None
-    # cnvert wind percentage
+def compute_edge_states(df_lines, temp_c, wind_pct):
     wind_ms = (wind_pct / 100.0) * 15.0
-    
     if cs and hasattr(cs, "compute_stress"):
-        try:
-            out = cs.compute_stress(df_lines.copy(), temp_c, wind_ms)
-        except Exception as e:
-            st.warning(f"compute_stress failed: {e}")
-    if out is None and sm and hasattr(sm, "compute_line_stress"):
-        try:
-            out = sm.compute_line_stress(df_lines.copy(), {
-                "temp": temp_c,
-                "wind": wind_ms,  # pass wind speed in m/s
-                "pressure": 101.325,  # standard atmospheric pressure
-                "elevation": 0.0,  # sea level
-                "latitude": 21.3069,  # hawaii latitude
-                "hour": 12.0,  # noon
-                "date": 180,  # mid ear
-                "atmosphere": "clear"  # clear sky
-            })
-        except Exception as e:
-            st.warning(f"compute_stress failed: {e}")
-    if out is None and sm and hasattr(sm, "compute_line_stress"):
-        try:
-            out = sm.compute_line_stress(df_lines.copy(), {"temp": temp_c, "wind": wind_pct})
-        except Exception as e:
-            st.error(f"stress_model failed: {e}")
-            out = None
-
-    if isinstance(out, pd.DataFrame):
-        out = out.copy()
-        if "name" not in out.columns and "line_id" in out.columns:
-            out.rename(columns={"line_id":"name"}, inplace=True)
-        out["name"] = out["name"].astype(str)
-        # normalize stress
-        if "stress" not in out.columns:
-            if "stress_pct" in out.columns: out["stress"] = out["stress_pct"]
-            elif "utilization" in out.columns: out["stress"] = 100*out["utilization"]
-            else: out["stress"] = 0.0
-        if out["stress"].max() <= 1.5:
-            out["stress"] = (out["stress"]*100).clip(0, 300)
-        # colors if backend didn't supply
-        if "color" not in out.columns:
-            def to_color(s):
-                return ("#27ae60" if s < 60 else  # green
-                        "#f39c12" if s < 90 else  # orange
-                        "#c0392b")                # red
-            out["color"] = out["stress"].apply(to_color)
-        return out[["name","stress","color"]]
+        out = cs.compute_stress(df_lines.copy(), temp_c, wind_ms)
     else:
-        # neutral default
-        tmp = df_lines.copy()
-        tmp["name"] = tmp["name"].astype(str)
-        tmp["stress"] = 0.0
-        tmp["color"]  = "#8a93b6"
-        return tmp[["name","stress","color"]]
+        out = df_lines.copy()
+        out["stress"] = 0
+        out["color"] = "#00FF00"
+    return out[["name", "stress", "color"]]
 
-# help load data
-buses = csv_try(["data/buses.csv", "data/csv/buses.csv"]).copy()
+# ─────────── Session State ───────────
+if "temp" not in st.session_state: st.session_state["temp"] = 27.0
+if "wind" not in st.session_state: st.session_state["wind"] = 50.0
+
+# ─────────── Layout ───────────
+left, right = st.columns([0.35, 0.65])
+
+with left:
+    st.markdown("## 🌤️ Controls")
+
+    if st.button("☀️ Import Current Hawaii Weather", use_container_width=True):
+        temp_now, wind_now = get_hawaii_weather()
+        if temp_now is not None:
+            st.session_state["temp"], st.session_state["wind"] = temp_now, wind_now
+            st.rerun()
+
+    temp = st.slider("Temperature (°C)", 10.0, 75.0, st.session_state["temp"], key="temp_slider")
+    wind = st.slider("Wind Intensity (%)", 0.0, 100.0, st.session_state["wind"], key="wind_slider")
+    st.session_state["temp"], st.session_state["wind"] = temp, wind
+
+# ─────────── Load & compute ───────────
+buses = csv_try(["data/csv/buses.csv"])
+lines = csv_try(["data/csv/lines.csv"])
+lines = lines.rename(columns={"bus0": "bus_a", "bus1": "bus_b"})
+lines["bus_a"] = lines["bus_a"].astype(str)
+lines["bus_b"] = lines["bus_b"].astype(str)
 buses["name"] = buses["name"].astype(str)
 
-lines = load_lines(buses)
-edge_states = compute_edge_states(lines, temp, wind)
-
-# thresholds
-incident = (
-    pd.concat([
-        lines[["bus_a","name"]].rename(columns={"bus_a":"bus"}),
-        lines[["bus_b","name"]].rename(columns={"bus_b":"bus"})
-    ], ignore_index=True)
-    .merge(edge_states, on="name", how="left")
-)
-node_stress = incident.groupby("bus")["stress"].max().rename("node_stress").reset_index()
-
-buses_plot = buses.merge(node_stress, left_on="name", right_on="bus", how="left")
-buses_plot["node_stress"] = buses_plot["node_stress"].fillna(0.0)
-
-def node_color(s):
-    return ("#27ae60" if s < 60 else  # green
-            "#f39c12" if s < 90 else  # orange
-            "#c0392b")                 # red
-buses_plot["node_color"] = buses_plot["node_stress"].apply(node_color)
-
+edge_states = compute_edge_states(lines, st.session_state["temp"], st.session_state["wind"])
 lines_plot = lines.merge(edge_states, on="name", how="left")
 
-#plot
-fig, ax = plt.subplots(figsize=(12.5, 8), dpi=120)
-bg = "#131a2e"; textc = "#e9ecff"
-fig.patch.set_facecolor(bg); ax.set_facecolor(bg)
-ax.axis("off")
+incident = pd.concat([
+    lines_plot[["bus_a", "name"]].rename(columns={"bus_a": "bus"}),
+    lines_plot[["bus_b", "name"]].rename(columns={"bus_b": "bus"})
+]).merge(edge_states, on="name", how="left")
 
-b_coords = buses.set_index("name")[["x","y"]]
+node_stress = incident.groupby("bus")["stress"].max().rename("node_stress").reset_index()
+buses_plot = buses.merge(node_stress, left_on="name", right_on="bus", how="left").fillna({"node_stress": 0.0})
+buses_plot["node_color"] = buses_plot["node_stress"].apply(
+    lambda s: "#00FF00" if s < 60 else "#FFA500" if s < 90 else "#FF0000"
+)
 
-def xy(bus_id):
-    try:
-        return b_coords.loc[str(bus_id)].values
-    except Exception:
-        return None
+# ─────────── Alerts ───────────
+with left:
+    st.markdown("### ⚠️ Alert Hub")
+    critical_lines = lines_plot[lines_plot["color"].isin(["#FF0000", "#8B0000"])]
 
-# draw edges
-for _, e in lines_plot.iterrows():
-    a = xy(e["bus_a"]); b = xy(e["bus_b"])
-    if a is None or b is None: continue
-    x1,y1 = a; x2,y2 = b
-    color = e.get("color", "#8a93b6")
-    stress = float(e.get("stress", 0.0))
-    width = max(1.8, 1.8 + 7.0*(stress/100.0))
-    ax.plot([x1,x2],[y1,y2], color=color, linewidth=width, zorder=1, alpha=.95, solid_capstyle="round")
+    if critical_lines.empty:
+        st.markdown("<div style='color:#00FF00;font-weight:600;'>✅ No current alerts detected.</div>", unsafe_allow_html=True)
+    else:
+        for _, row in critical_lines.iterrows():
+            bus_a = str(row.get("bus_a", "?"))
+            bus_b = str(row.get("bus_b", "?"))
+            name_a = buses.loc[buses["name"] == bus_a, "BusName"].iloc[0] if "BusName" in buses.columns and (buses["name"] == bus_a).any() else bus_a
+            name_b = buses.loc[buses["name"] == bus_b, "BusName"].iloc[0] if "BusName" in buses.columns and (buses["name"] == bus_b).any() else bus_b
 
-# draw nodes (bigger)
-for _, r in buses_plot.iterrows():
-    size = 260 if float(r.get("v_nom", 69.0)) == 138.0 else 220
-    ax.scatter(r["x"], r["y"], s=size, color=r["node_color"],
-               edgecolors='white', linewidths=1.4, zorder=3)
-    ax.text(r["x"], r["y"], str(r["name"]), fontsize=9, ha='center', va='center',
-            color='white', zorder=4)
+            st.markdown(
+                f"<div style='color:#FF0000;font-weight:600;'>🚨 {name_a} ↔ {name_b} — Critical Alert</div>",
+                unsafe_allow_html=True
+            )
 
-# optional compact legend
-from matplotlib.lines import Line2D
-legend = [
-    Line2D([0],[0], marker='o', color='w', label='Nominal (<60%)', markerfacecolor="#27ae60",
-           markeredgecolor='white', markeredgewidth=1, markersize=12),
-    Line2D([0],[0], marker='o', color='w', label='Caution (60-90%)', markerfacecolor="#f39c12",
-           markeredgecolor='white', markeredgewidth=1, markersize=12),
-    Line2D([0],[0], marker='o', color='w', label='Critical (>90%)', markerfacecolor="#c0392b",
-           markeredgecolor='white', markeredgewidth=1, markersize=12),
-]
-leg = ax.legend(handles=legend, loc='upper right', frameon=True)
-leg.get_frame().set_facecolor("#1a2140"); leg.get_frame().set_edgecolor("none")
-for t in leg.get_texts(): t.set_color(textc)
+# ─────────── Visualization ───────────
+with right:
+    st.markdown(f"""
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between;">
+      <div>
+        <h1 style="margin:0;">Hawaii Grid</h1>
+        <div class="small">Team 68 • Synthetic 37-bus network</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <div class="small" style="padding:10px 14px; border-radius:12px; background:#1a2140;">
+          Wind <b style="color:#fff">{st.session_state["wind"]:.0f}%</b></div>
+        <div class="small" style="padding:10px 14px; border-radius:12px; background:#1a2140;">
+          Temp <b style="color:#fff">{st.session_state["temp"]:.0f}°C</b></div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.pyplot(fig, width='stretch')
-st.markdown('</div>', unsafe_allow_html=True)
+    fig, ax = plt.subplots(figsize=(12, 8), dpi=120)
+    fig.patch.set_facecolor("#131a2e")
+    ax.set_facecolor("#131a2e")
+    ax.axis("off")
+
+    b_coords = buses.set_index("name")[["x", "y"]]
+
+    def xy(bus_id):
+        try:
+            return b_coords.loc[str(bus_id)].values
+        except KeyError:
+            return None
+
+    for _, e in lines_plot.iterrows():
+        a, b = xy(e["bus_a"]), xy(e["bus_b"])
+        if a is None or b is None:
+            continue
+        color = e.get("color", "#00FF00")
+        stress = float(e.get("stress", 0.0))
+        width = max(1.8, 1.8 + 7.0 * (stress / 100.0))
+        ax.plot([a[0], b[0]], [a[1], b[1]], color=color, linewidth=width,
+                alpha=0.95, solid_capstyle="round", zorder=1)
+
+    for _, r in buses_plot.iterrows():
+        ax.scatter(r["x"], r["y"], s=220, color=r["node_color"],
+                   edgecolors="white", linewidths=1.4, zorder=3)
+        ax.text(r["x"], r["y"], str(r["name"]), fontsize=9,
+                ha="center", va="center", color="white", zorder=4)
+
+    st.pyplot(fig, use_container_width=True)
