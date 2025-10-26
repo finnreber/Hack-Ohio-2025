@@ -76,7 +76,7 @@ def get_hawaii_weather():
         st.error(f"Failed to fetch weather data: {str(e)}")
         return None, None
 
-# ── Sidebar controls ──────────────────────────────────────────────────────────
+# Sidebar controls
 st.sidebar.header("Adjust Parameters")
 
 # Weather import button with custom styling
@@ -146,7 +146,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# Helpers
 def csv_try(paths):
     for p in paths:
         if os.path.exists(p):
@@ -276,14 +276,14 @@ def compute_edge_states(df_lines: pd.DataFrame, temp_c: float, wind_pct: float) 
         tmp["color"]  = "#8a93b6"
         return tmp[["name","stress","color"]]
 
-# ── Load data ─────────────────────────────────────────────────────────────────
+# Load data
 buses = csv_try(["data/buses.csv", "data/csv/buses.csv"]).copy()
 buses["name"] = buses["name"].astype(str)
 
 lines = load_lines(buses)
 edge_states = compute_edge_states(lines, temp, wind)
 
-# ── Node thresholds from incident edge stress ─────────────────────────────────
+# Node thresholds
 incident = (
     pd.concat([
         lines[["bus_a","name"]].rename(columns={"bus_a":"bus"}),
