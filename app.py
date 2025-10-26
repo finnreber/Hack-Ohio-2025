@@ -2,10 +2,13 @@ import os, sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import streamlit as st
 import requests
 
-# ─────────── Path setup ───────────
+# ───────────────────────────────
+# Path setup
+# ───────────────────────────────
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
@@ -16,7 +19,9 @@ try:
 except Exception:
     cs = None
 
-# ─────────── Page setup ───────────
+# ───────────────────────────────
+# Streamlit setup
+# ───────────────────────────────
 st.set_page_config(page_title="Hawaii Grid", layout="wide")
 st.markdown("""
 <style>
@@ -39,12 +44,43 @@ h1,h2,h3,h4,h5,h6{color:var(--text)!important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────── Weather fetcher ───────────
+# ───────────────────────────────
+# Background image helper
+# ───────────────────────────────
+def draw_oahu_background(ax, buses_df, img_path="data/gis/honolulu.jpg", alpha=0.35):
+    """Draw a white Oahu silhouette behind the network."""
+    if not os.path.exists(img_path):
+        st.warning(f"Oahu background image not found: {img_path}")
+        return
+
+    img = mpimg.imread(img_path)
+    img_gray = np.mean(img[..., :3], axis=-1) if img.ndim == 3 else img
+    img_inv = 1 - img_gray
+
+    bxmin, bxmax = buses_df["x"].min(), buses_df["x"].max()
+    bymin, bymax = buses_df["y"].min(), buses_df["y"].max()
+    b_w, b_h = bxmax - bxmin, bymax - bymin
+
+    pad_x, pad_y = b_w * 0.15, b_h * 0.15
+    shift_x, shift_y = -b_w * 0.06, b_h * 0.02
+
+    extent = [
+        bxmin - pad_x + shift_x,
+        bxmax + pad_x + shift_x,
+        bymin - pad_y + shift_y,
+        bymax + pad_y + shift_y
+    ]
+
+    ax.set_facecolor("black")
+    ax.imshow(img_inv, extent=extent, aspect='auto', zorder=0, alpha=alpha, cmap="gray")
+
+# ───────────────────────────────
+# Weather fetcher
+# ───────────────────────────────
 def get_hawaii_weather():
     try:
         headers = {'User-Agent': 'HawaiiGridApp/1.0'}
-        point_url = "https://api.weather.gov/points/21.3069,-157.8583"
-        resp = requests.get(point_url, headers=headers)
+        resp = requests.get("https://api.weather.gov/points/21.3069,-157.8583", headers=headers)
         data = resp.json()
         forecast_url = data['properties']['forecastHourly']
         resp = requests.get(forecast_url, headers=headers)
@@ -60,7 +96,9 @@ def get_hawaii_weather():
         st.error(f"Weather fetch failed: {e}")
         return None, None
 
-# ─────────── Load data helpers ───────────
+# ───────────────────────────────
+# Data helpers
+# ───────────────────────────────
 def csv_try(paths):
     for p in paths:
         if os.path.exists(p):
@@ -70,18 +108,34 @@ def csv_try(paths):
 def compute_edge_states(df_lines, temp_c, wind_pct):
     wind_ms = (wind_pct / 100.0) * 15.0
     if cs and hasattr(cs, "compute_stress"):
-        out = cs.compute_stress(df_lines.copy(), temp_c, wind_ms)
+        try:
+            out = cs.compute_stress(df_lines.copy(), temp_c, wind_ms)
+        except Exception as e:
+            st.warning(f"compute_stress failed: {e}")
+            out = df_lines.copy()
+            out["stress"] = 0
     else:
         out = df_lines.copy()
         out["stress"] = 0
-        out["color"] = "#00FF00"
+
+    def stress_color(s):
+        if s > 100: return "#8B0000"
+        elif s > 90: return "#FF0000"
+        elif s > 70: return "#FFA500"
+        elif s > 50: return "#FFFF00"
+        else: return "#00FF00"
+    out["color"] = out["stress"].apply(stress_color)
     return out[["name", "stress", "color"]]
 
-# ─────────── Session State ───────────
+# ───────────────────────────────
+# Session State
+# ───────────────────────────────
 if "temp" not in st.session_state: st.session_state["temp"] = 27.0
 if "wind" not in st.session_state: st.session_state["wind"] = 50.0
 
-# ─────────── Layout ───────────
+# ───────────────────────────────
+# Layout
+# ───────────────────────────────
 left, right = st.columns([0.35, 0.65])
 
 with left:
@@ -97,7 +151,9 @@ with left:
     wind = st.slider("Wind Intensity (%)", 0.0, 100.0, st.session_state["wind"], key="wind_slider")
     st.session_state["temp"], st.session_state["wind"] = temp, wind
 
-# ─────────── Load & compute ───────────
+# ───────────────────────────────
+# Load and compute reactively
+# ───────────────────────────────
 buses = csv_try(["data/csv/buses.csv"])
 lines = csv_try(["data/csv/lines.csv"])
 lines = lines.rename(columns={"bus0": "bus_a", "bus1": "bus_b"})
@@ -105,6 +161,7 @@ lines["bus_a"] = lines["bus_a"].astype(str)
 lines["bus_b"] = lines["bus_b"].astype(str)
 buses["name"] = buses["name"].astype(str)
 
+# Update line stresses
 edge_states = compute_edge_states(lines, st.session_state["temp"], st.session_state["wind"])
 lines_plot = lines.merge(edge_states, on="name", how="left")
 
@@ -119,7 +176,9 @@ buses_plot["node_color"] = buses_plot["node_stress"].apply(
     lambda s: "#00FF00" if s < 60 else "#FFA500" if s < 90 else "#FF0000"
 )
 
-# ─────────── Alerts ───────────
+# ───────────────────────────────
+# Alerts Hub
+# ───────────────────────────────
 with left:
     st.markdown("### ⚠️ Alert Hub")
     critical_lines = lines_plot[lines_plot["color"].isin(["#FF0000", "#8B0000"])]
@@ -128,8 +187,7 @@ with left:
         st.markdown("<div style='color:#00FF00;font-weight:600;'>✅ No current alerts detected.</div>", unsafe_allow_html=True)
     else:
         for _, row in critical_lines.iterrows():
-            bus_a = str(row.get("bus_a", "?"))
-            bus_b = str(row.get("bus_b", "?"))
+            bus_a, bus_b = str(row.get("bus_a", "?")), str(row.get("bus_b", "?"))
             name_a = buses.loc[buses["name"] == bus_a, "BusName"].iloc[0] if "BusName" in buses.columns and (buses["name"] == bus_a).any() else bus_a
             name_b = buses.loc[buses["name"] == bus_b, "BusName"].iloc[0] if "BusName" in buses.columns and (buses["name"] == bus_b).any() else bus_b
 
@@ -138,7 +196,9 @@ with left:
                 unsafe_allow_html=True
             )
 
-# ─────────── Visualization ───────────
+# ───────────────────────────────
+# Plot Network
+# ───────────────────────────────
 with right:
     st.markdown(f"""
     <div class="card" style="display:flex; align-items:center; justify-content:space-between;">
@@ -160,6 +220,9 @@ with right:
     ax.set_facecolor("#131a2e")
     ax.axis("off")
 
+    # 🌋 Draw Oahu silhouette
+    draw_oahu_background(ax, buses, img_path="data/gis/honolulu.jpg", alpha=0.35)
+
     b_coords = buses.set_index("name")[["x", "y"]]
 
     def xy(bus_id):
@@ -176,7 +239,7 @@ with right:
         stress = float(e.get("stress", 0.0))
         width = max(1.8, 1.8 + 7.0 * (stress / 100.0))
         ax.plot([a[0], b[0]], [a[1], b[1]], color=color, linewidth=width,
-                alpha=0.95, solid_capstyle="round", zorder=1)
+                alpha=0.95, solid_capstyle="round", zorder=2)
 
     for _, r in buses_plot.iterrows():
         ax.scatter(r["x"], r["y"], s=220, color=r["node_color"],
