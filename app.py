@@ -146,14 +146,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 def csv_try(paths):
     for p in paths:
         if os.path.exists(p):
             return pd.read_csv(p)
     raise FileNotFoundError(paths)
 
-# Build an undirected topology from bus positions (k-NN) when no lines file
+
 def lines_from_buses_knn(buses_df: pd.DataFrame, k: int = 2) -> pd.DataFrame:
     B = buses_df.copy()
     B["name"] = B["name"].astype(str)
@@ -177,7 +176,7 @@ def lines_from_buses_knn(buses_df: pd.DataFrame, k: int = 2) -> pd.DataFrame:
 def load_lines(buses_df: pd.DataFrame) -> pd.DataFrame:
     """Use real endpoints if available; else synthesize from buses via kNN.
        Also left-join optional p0_nominal from line_flows_nominal.csv."""
-    # 1) try files with endpoints
+   
     for p in ["data/lines.csv", "data/csv/lines.csv"]:
         if os.path.exists(p):
             df = pd.read_csv(p).copy()
@@ -191,7 +190,7 @@ def load_lines(buses_df: pd.DataFrame) -> pd.DataFrame:
                 df.insert(0, "name", [f"L{i}" for i in range(len(df))])
             for c in ["name","bus_a","bus_b"]:
                 df[c] = df[c].astype(str)
-            # Include rating/s_nom and other needed columns if they exist
+        
             needed_cols = ["name", "bus_a", "bus_b"]
             for col in ["rating", "s_nom"]:
                 if col in df.columns:
@@ -199,13 +198,11 @@ def load_lines(buses_df: pd.DataFrame) -> pd.DataFrame:
             lines = df[needed_cols].copy()
             break
     else:
-        # 2) synthesize if we don't have endpoints
+        
         lines = lines_from_buses_knn(buses_df, k=2)
-        # Add default rating if synthesizing
         if "rating" not in lines.columns and "s_nom" not in lines.columns:
-            lines["rating"] = 200.0  # default MVA rating
+            lines["rating"] = 200.0 
 
-    # 3) optional nominal flows
     for p in ["data/line_flows_nominal.csv", "data/csv/line_flows_nominal.csv"]:
         if os.path.exists(p):
             flows = pd.read_csv(p).copy()
@@ -219,7 +216,7 @@ def load_lines(buses_df: pd.DataFrame) -> pd.DataFrame:
 def compute_edge_states(df_lines: pd.DataFrame, temp_c: float, wind_pct: float) -> pd.DataFrame:
     """Call your backend. Expect columns: name, stress(0..100), color."""
     out = None
-    # Convert wind percentage to m/s (assuming 0-100% maps to 0-15 m/s)
+    # cnvert wind percentage
     wind_ms = (wind_pct / 100.0) * 15.0
     
     if cs and hasattr(cs, "compute_stress"):
@@ -231,13 +228,13 @@ def compute_edge_states(df_lines: pd.DataFrame, temp_c: float, wind_pct: float) 
         try:
             out = sm.compute_line_stress(df_lines.copy(), {
                 "temp": temp_c,
-                "wind": wind_ms,  # Pass wind speed in m/s
-                "pressure": 101.325,  # Standard atmospheric pressure (kPa)
-                "elevation": 0.0,  # Sea level
-                "latitude": 21.3069,  # Hawaii latitude
-                "hour": 12.0,  # Noon
-                "date": 180,  # Mid-year
-                "atmosphere": "clear"  # Clear sky
+                "wind": wind_ms,  # pass wind speed in m/s
+                "pressure": 101.325,  # standard atmospheric pressure
+                "elevation": 0.0,  # sea level
+                "latitude": 21.3069,  # hawaii latitude
+                "hour": 12.0,  # noon
+                "date": 180,  # mid ear
+                "atmosphere": "clear"  # clear sky
             })
         except Exception as e:
             st.warning(f"compute_stress failed: {e}")
@@ -263,9 +260,9 @@ def compute_edge_states(df_lines: pd.DataFrame, temp_c: float, wind_pct: float) 
         # colors if backend didn't supply
         if "color" not in out.columns:
             def to_color(s):
-                return ("#27ae60" if s < 60 else  # Nominal - Green
-                        "#f39c12" if s < 90 else  # Caution - Orange
-                        "#c0392b")                # Critical - Red
+                return ("#27ae60" if s < 60 else  # green
+                        "#f39c12" if s < 90 else  # orange
+                        "#c0392b")                # red
             out["color"] = out["stress"].apply(to_color)
         return out[["name","stress","color"]]
     else:
@@ -276,14 +273,14 @@ def compute_edge_states(df_lines: pd.DataFrame, temp_c: float, wind_pct: float) 
         tmp["color"]  = "#8a93b6"
         return tmp[["name","stress","color"]]
 
-# ── Load data ─────────────────────────────────────────────────────────────────
+# help load data
 buses = csv_try(["data/buses.csv", "data/csv/buses.csv"]).copy()
 buses["name"] = buses["name"].astype(str)
 
 lines = load_lines(buses)
 edge_states = compute_edge_states(lines, temp, wind)
 
-# ── Node thresholds from incident edge stress ─────────────────────────────────
+# thresholds
 incident = (
     pd.concat([
         lines[["bus_a","name"]].rename(columns={"bus_a":"bus"}),
@@ -297,14 +294,14 @@ buses_plot = buses.merge(node_stress, left_on="name", right_on="bus", how="left"
 buses_plot["node_stress"] = buses_plot["node_stress"].fillna(0.0)
 
 def node_color(s):
-    return ("#27ae60" if s < 60 else  # Nominal - Green
-            "#f39c12" if s < 90 else  # Caution - Orange
-            "#c0392b")                 # Critical - Red
+    return ("#27ae60" if s < 60 else  # green
+            "#f39c12" if s < 90 else  # orange
+            "#c0392b")                 # red
 buses_plot["node_color"] = buses_plot["node_stress"].apply(node_color)
 
 lines_plot = lines.merge(edge_states, on="name", how="left")
 
-# ── Plot (no axes; bigger nodes; edge width by stress; color by backend) ─────
+#plot
 fig, ax = plt.subplots(figsize=(12.5, 8), dpi=120)
 bg = "#131a2e"; textc = "#e9ecff"
 fig.patch.set_facecolor(bg); ax.set_facecolor(bg)
