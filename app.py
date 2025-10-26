@@ -6,9 +6,7 @@ import matplotlib.image as mpimg
 import streamlit as st
 import requests
 
-# ───────────────────────────────
 # Path setup
-# ───────────────────────────────
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, "src")
 if SRC not in sys.path:
@@ -19,9 +17,7 @@ try:
 except Exception:
     cs = None
 
-# ───────────────────────────────
 # Streamlit setup
-# ───────────────────────────────
 st.set_page_config(page_title="Hawaii Grid", layout="wide")
 st.markdown("""
 <style>
@@ -44,9 +40,7 @@ h1,h2,h3,h4,h5,h6{color:var(--text)!important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ───────────────────────────────
 # Background image helper
-# ───────────────────────────────
 def draw_oahu_background(ax, buses_df, img_path="data/gis/honolulu.jpg", alpha=0.35):
     """Draw a white Oahu silhouette behind the network."""
     if not os.path.exists(img_path):
@@ -74,9 +68,7 @@ def draw_oahu_background(ax, buses_df, img_path="data/gis/honolulu.jpg", alpha=0
     ax.set_facecolor("black")
     ax.imshow(img_inv, extent=extent, aspect='auto', zorder=0, alpha=alpha, cmap="gray")
 
-# ───────────────────────────────
 # Weather fetcher
-# ───────────────────────────────
 def get_hawaii_weather():
     try:
         headers = {'User-Agent': 'HawaiiGridApp/1.0'}
@@ -96,9 +88,7 @@ def get_hawaii_weather():
         st.error(f"Weather fetch failed: {e}")
         return None, None
 
-# ───────────────────────────────
 # Data helpers
-# ───────────────────────────────
 def csv_try(paths):
     for p in paths:
         if os.path.exists(p):
@@ -127,15 +117,11 @@ def compute_edge_states(df_lines, temp_c, wind_pct):
     out["color"] = out["stress"].apply(stress_color)
     return out[["name", "stress", "color"]]
 
-# ───────────────────────────────
 # Session State
-# ───────────────────────────────
 if "temp" not in st.session_state: st.session_state["temp"] = 27.0
 if "wind" not in st.session_state: st.session_state["wind"] = 50.0
 
-# ───────────────────────────────
 # Layout
-# ───────────────────────────────
 left, right = st.columns([0.35, 0.65])
 
 with left:
@@ -176,9 +162,7 @@ buses_plot["node_color"] = buses_plot["node_stress"].apply(
     lambda s: "#00FF00" if s < 60 else "#FFA500" if s < 90 else "#FF0000"
 )
 
-# ───────────────────────────────
-# Alerts Hub
-# ───────────────────────────────
+# Alerts hub
 with left:
     st.markdown("### ⚠️ Alert Hub")
     critical_lines = lines_plot[lines_plot["color"].isin(["#FF0000", "#8B0000"])]
@@ -196,9 +180,7 @@ with left:
                 unsafe_allow_html=True
             )
 
-# ───────────────────────────────
-# Plot Network
-# ───────────────────────────────
+# Plot network
 with right:
     st.markdown(f"""
     <div class="card" style="display:flex; align-items:center; justify-content:space-between;">
@@ -220,7 +202,7 @@ with right:
     ax.set_facecolor("#131a2e")
     ax.axis("off")
 
-    # 🌋 Draw Oahu silhouette
+    # Oahu Silhouette
     draw_oahu_background(ax, buses, img_path="data/gis/honolulu.jpg", alpha=0.35)
 
     b_coords = buses.set_index("name")[["x", "y"]]
